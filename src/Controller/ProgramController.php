@@ -35,7 +35,7 @@ class ProgramController extends AbstractController
         $violations = $validator->validate($data, new Assert\Collection([
             'goal'            => [new Assert\NotBlank(), new Assert\Choice(choices: ['bulk', 'cut', 'maintain', 'strength'])],
             'experienceLevel' => [new Assert\NotBlank(), new Assert\Choice(choices: ['beginner', 'intermediate', 'advanced'])],
-            'sessionsPerWeek' => [new Assert\NotBlank(), new Assert\Choice(choices: [3, 4, 5, 6])],
+            'sessionsPerWeek' => [new Assert\NotBlank(), new Assert\Choice(choices: [0, 3, 4, 5, 6])],
             'programDuration' => [new Assert\NotBlank(), new Assert\Choice(choices: [4, 8, 12])],
             'sessionDuration' => [new Assert\NotBlank(), new Assert\Choice(choices: [45, 60, 90])],
             'equipment'       => [new Assert\NotBlank(), new Assert\Choice(choices: ['full_gym', 'home_gym', 'bodyweight'])],
@@ -76,14 +76,7 @@ class ProgramController extends AbstractController
         $user     = $this->getUser();
         $programs = $repository->findBy(['user' => $user], ['generatedAt' => 'DESC']);
 
-        return $this->json(array_map(fn(Program $p) => [
-            'id'              => $p->getId(),
-            'title'           => $p->getTitle(),
-            'description'     => $p->getDescription(),
-            'durationWeeks'   => $p->getDurationWeeks(),
-            'sessionsPerWeek' => $p->getSessionsPerWeek(),
-            'generatedAt'     => $p->getGeneratedAt()->format('c'),
-        ], $programs));
+        return $this->json(array_map(fn(Program $p) => $this->formatProgram($p), $programs));
     }
 
     #[Route('/{id}', name: 'api_programs_get', methods: ['GET'])]
@@ -109,7 +102,26 @@ class ProgramController extends AbstractController
             'durationWeeks'   => $program->getDurationWeeks(),
             'sessionsPerWeek' => $program->getSessionsPerWeek(),
             'generatedAt'     => $program->getGeneratedAt()->format('c'),
-            'content'         => $program->getContent(),
+            'content'         => $this->normalizeContent($program->getContent()),
         ];
+    }
+
+    /**
+     * Normalise les clés du contenu IA (snake_case → camelCase).
+     * Permet la rétrocompatibilité avec les programmes générés avant le fix.
+     */
+    private function normalizeContent(array $content): array
+    {
+        if (isset($content['weeks']) && is_array($content['weeks'])) {
+            foreach ($content['weeks'] as &$week) {
+                if (isset($week['week_number']) && !isset($week['weekNumber'])) {
+                    $week['weekNumber'] = $week['week_number'];
+                    unset($week['week_number']);
+                }
+            }
+            unset($week);
+        }
+
+        return $content;
     }
 }

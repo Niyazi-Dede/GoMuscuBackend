@@ -97,6 +97,14 @@ class AIProgramGeneratorService
         $level     = $levelLabels[$p['experienceLevel']] ?? $p['experienceLevel'];
         $equipment = $equipmentLabels[$p['equipment']] ?? $p['equipment'];
 
+        $sessionsLabel = $p['sessionsPerWeek'] === 0
+            ? "Libre (choisis la fréquence optimale selon l'objectif et le niveau)"
+            : $p['sessionsPerWeek'] . ' séances par semaine';
+
+        $sessionsRule = $p['sessionsPerWeek'] === 0
+            ? "- Choisir la fréquence optimale (entre 3 et 5 séances), réparties sur des jours différents"
+            : "- {$p['sessionsPerWeek']} séances par semaine, réparties sur des jours différents";
+
         return <<<PROMPT
 Génère un programme d'entraînement complet en JSON avec exactement cette structure :
 
@@ -105,7 +113,7 @@ Génère un programme d'entraînement complet en JSON avec exactement cette stru
   "description": "Description courte (2-3 phrases)",
   "weeks": [
     {
-      "week_number": 1,
+      "weekNumber": 1,
       "sessions": [
         {
           "day": "Lundi",
@@ -129,14 +137,14 @@ Génère un programme d'entraînement complet en JSON avec exactement cette stru
 Paramètres du programme :
 - Objectif : {$goal}
 - Niveau : {$level}
-- Fréquence : {$p['sessionsPerWeek']} séances par semaine
+- Fréquence : {$sessionsLabel}
 - Durée du programme : {$p['programDuration']} semaines
 - Durée d'une séance : {$p['sessionDuration']} minutes
 - Équipement disponible : {$equipment}
 
 Règles importantes :
 - Génère TOUTES les {$p['programDuration']} semaines avec progression (semaines différentes)
-- {$p['sessionsPerWeek']} séances par semaine, réparties sur des jours différents
+{$sessionsRule}
 - Chaque séance doit tenir en {$p['sessionDuration']} minutes
 - Adapte les exercices à l'équipement disponible
 - Programme progressif : augmente la charge/volume semaine après semaine

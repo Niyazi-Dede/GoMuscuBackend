@@ -99,12 +99,15 @@ class NutritionController extends AbstractController
         $today = new \DateTimeImmutable('today');
         $week  = $today->modify('-6 days');
 
-        $caloriesToday   = $repository->sumCaloriesByUserAndDate($user, $today);
-        $caloriesWeekSum = $repository->sumCaloriesByUserBetweenDates($user, $week, $today);
+        $caloriesConsumed = $repository->sumCaloriesByUserAndDate($user, $today);
+        $caloriesTarget   = $user->getProfile()?->getDailyCalorieTarget() ?? 0;
+        $caloriesWeekAvg  = (int) round($repository->sumCaloriesByUserBetweenDates($user, $week, $today) / 7);
 
         return $this->json([
-            'caloriesToday'       => $caloriesToday,
-            'caloriesWeekAverage' => (int) round($caloriesWeekSum / 7),
+            'caloriesConsumed'    => $caloriesConsumed,
+            'caloriesTarget'      => $caloriesTarget,
+            'remaining'           => max(0, $caloriesTarget - $caloriesConsumed),
+            'caloriesWeekAverage' => $caloriesWeekAvg,
         ]);
     }
 

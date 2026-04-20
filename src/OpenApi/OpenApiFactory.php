@@ -81,10 +81,10 @@ class OpenApiFactory implements OpenApiFactoryInterface
             requestBody: new RequestBody(
                 content: new ArrayObject([
                     'application/json' => ['schema' => ['type' => 'object', 'properties' => [
-                        'goal'            => ['type' => 'string', 'enum' => ['bulk', 'cut', 'maintain', 'strength']],
+                        'goal'            => ['type' => 'string', 'enum' => ['bulk', 'cut', 'maintain', 'strength', 'calisthenics']],
                         'experienceLevel' => ['type' => 'string', 'enum' => ['beginner', 'intermediate', 'advanced']],
-                        'sessionsPerWeek' => ['type' => 'integer', 'enum' => [3, 4, 5, 6]],
-                        'programDuration' => ['type' => 'integer', 'enum' => [4, 8, 12]],
+                        'sessionsPerWeek' => ['type' => 'integer', 'enum' => [0, 1, 2, 3, 4, 5, 6]],
+                        'programDuration' => ['type' => 'integer', 'enum' => [26, 39, 52]],
                         'sessionDuration' => ['type' => 'integer', 'enum' => [45, 60, 90]],
                         'equipment'       => ['type' => 'string', 'enum' => ['full_gym', 'home_gym', 'bodyweight']],
                     ]]],

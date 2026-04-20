@@ -14,13 +14,13 @@ class AIProgramGeneratorService
     ) {}
 
     /**
-     * Génère un programme d'entraînement via l'API Groq (Llama).
+     * Generate a long-term training program through the AI API.
      *
      * @param array{
      *   goal: string,
      *   experienceLevel: string,
      *   sessionsPerWeek: int,
-     *   programDuration: int,
+     *   programDuration?: int,
      *   sessionDuration: int,
      *   equipment: string
      * } $params
@@ -32,21 +32,21 @@ class AIProgramGeneratorService
         $response = $this->httpClient->request('POST', $this->apiUrl, [
             'headers' => [
                 'Authorization' => 'Bearer ' . $this->apiKey,
-                'Content-Type'  => 'application/json',
+                'Content-Type' => 'application/json',
             ],
             'json' => [
-                'model'           => $this->model,
-                'messages'        => [
+                'model' => $this->model,
+                'messages' => [
                     [
-                        'role'    => 'system',
-                        'content' => 'Tu es un coach sportif expert en musculation et fitness. Tu génères des programmes d\'entraînement personnalisés, progressifs et réalistes. Tu réponds UNIQUEMENT en JSON valide, sans texte avant ou après.',
+                        'role' => 'system',
+                        'content' => "Tu es un coach sportif professionnel (certifie CSCS / NSCA) avec 10 ans d'experience en preparation physique, musculation, fitness et calisthenie. Tu construis des programmes rigoureux et equilibres, avec un volume d'entrainement realiste adapte au niveau et a la duree de seance. Tu places les seances sur des jours precis de la semaine en respectant la recuperation, en evitant les doublons sur les memes groupes musculaires deux jours d'affilee, et en couvrant l'integralite du corps sur la semaine. Tu NE proposes JAMAIS une seance creuse : le nombre d'exercices doit etre coherent avec la duree de seance (regle de base : environ 1 exercice toutes les 10 a 12 minutes apres l'echauffement). Tu reponds uniquement en JSON valide, sans texte avant ou apres.",
                     ],
                     [
-                        'role'    => 'user',
+                        'role' => 'user',
                         'content' => $prompt,
                     ],
                 ],
-                'temperature'     => 0.7,
+                'temperature' => 0.4,
                 'response_format' => ['type' => 'json_object'],
             ],
         ]);
@@ -56,77 +56,96 @@ class AIProgramGeneratorService
             throw new \RuntimeException('Erreur API IA : HTTP ' . $statusCode);
         }
 
-        $body    = $response->toArray();
+        $body = $response->toArray();
         $content = $body['choices'][0]['message']['content'] ?? null;
 
         if (!$content) {
-            throw new \RuntimeException('Réponse IA vide ou invalide.');
+            throw new \RuntimeException('Reponse IA vide ou invalide.');
         }
 
         $program = json_decode($content, true);
 
-        if (json_last_error() !== JSON_ERROR_NONE || !isset($program['title'], $program['weeks'])) {
+        if (
+            json_last_error() !== JSON_ERROR_NONE
+            || !isset($program['title'], $program['sessions'])
+            || !is_array($program['sessions'])
+            || count($program['sessions']) === 0
+        ) {
             throw new \RuntimeException('Format JSON du programme invalide.');
         }
 
         return $program;
     }
 
-    private function buildPrompt(array $p): string
+    private function buildPrompt(array $params): string
     {
         $goalLabels = [
-            'bulk'     => 'Prise de masse musculaire',
-            'cut'      => 'Perte de poids / Sèche',
-            'maintain' => 'Maintien / Tonification',
+            'bulk' => 'Prise de masse musculaire',
+            'cut' => 'Perte de poids / seche',
+            'maintain' => 'Maintien / tonification',
             'strength' => 'Gain de force',
+            'calisthenics' => 'Calisthenie / controle du corps',
         ];
 
         $levelLabels = [
-            'beginner'     => 'Débutant (moins de 6 mois de pratique)',
-            'intermediate' => 'Intermédiaire (6 mois à 2 ans)',
-            'advanced'     => 'Avancé (plus de 2 ans)',
+            'beginner' => 'Debutant (moins de 6 mois de pratique)',
+            'intermediate' => 'Intermediaire (6 mois a 2 ans)',
+            'advanced' => 'Avance (plus de 2 ans)',
         ];
 
         $equipmentLabels = [
-            'full_gym'   => 'Salle de sport complète (barres, haltères, machines)',
-            'home_gym'   => 'Home gym (haltères, barre, banc)',
+            'full_gym' => 'Salle de sport complete (barres, halteres, machines)',
+            'home_gym' => 'Home gym (halteres, barre, banc)',
             'bodyweight' => 'Poids du corps uniquement',
         ];
 
-        $goal      = $goalLabels[$p['goal']] ?? $p['goal'];
-        $level     = $levelLabels[$p['experienceLevel']] ?? $p['experienceLevel'];
-        $equipment = $equipmentLabels[$p['equipment']] ?? $p['equipment'];
+        $goal = $goalLabels[$params['goal']] ?? $params['goal'];
+        $level = $levelLabels[$params['experienceLevel']] ?? $params['experienceLevel'];
+        $equipment = $equipmentLabels[$params['equipment']] ?? $params['equipment'];
+        $durationWeeks = (int) ($params['programDuration'] ?? 52);
+        $sessionsPerWeek = (int) $params['sessionsPerWeek'];
 
-        $sessionsLabel = $p['sessionsPerWeek'] === 0
-            ? "Libre (choisis la fréquence optimale selon l'objectif et le niveau)"
-            : $p['sessionsPerWeek'] . ' séances par semaine';
+        $sessionsLabel = $sessionsPerWeek === 0
+            ? "Libre (choisis la frequence optimale selon l'objectif et le niveau, entre 3 et 5 seances)"
+            : $sessionsPerWeek . ' seances par semaine';
 
-        $sessionsRule = $p['sessionsPerWeek'] === 0
-            ? "- Choisir la fréquence optimale (entre 3 et 5 séances), réparties sur des jours différents"
-            : "- {$p['sessionsPerWeek']} séances par semaine, réparties sur des jours différents";
+        $programHorizon = match ($durationWeeks) {
+            26 => 'environ 6 mois avant reevaluation',
+            39 => 'environ 9 mois avant reevaluation',
+            default => "environ 1 an, ou jusqu'a changement necessaire",
+        };
+
+        $splitSuggestion = $this->splitSuggestion($sessionsPerWeek, $params['goal']);
+        $restPattern = $this->restPattern($sessionsPerWeek);
+        $volumeRule = $this->volumeRule((int) $params['sessionDuration'], $params['experienceLevel']);
+
+        $sessionsRule = $sessionsPerWeek === 0
+            ? "- Choisis toi-meme la frequence optimale (3 a 5 seances), puis genere EXACTEMENT ce nombre de seances distinctes\n- Indique la frequence choisie dans selectionGuidance"
+            : "- Genere EXACTEMENT {$sessionsPerWeek} seances distinctes, une par jour d'entrainement de la semaine\n- Chaque seance correspond a un jour precis de la semaine, pas a un template qu'on alterne";
 
         return <<<PROMPT
-Génère un programme d'entraînement complet en JSON avec exactement cette structure :
+Genere un programme d'entrainement long terme en JSON avec exactement cette structure :
 
 {
   "title": "Titre du programme",
   "description": "Description courte (2-3 phrases)",
-  "weeks": [
+  "selectionGuidance": "Explique en 1 phrase l'ordre des seances dans la semaine",
+  "changeGuidance": "Explique en 1 phrase quand garder le programme et quand le modifier",
+  "sessions": [
     {
-      "weekNumber": 1,
-      "sessions": [
+      "id": "session-1",
+      "dayOfWeek": "lundi",
+      "day": "Lundi - Push",
+      "focus": "Groupes musculaires cibles de la seance",
+      "recommended": true,
+      "recommendationReason": "Pourquoi commencer par cette seance",
+      "exercises": [
         {
-          "day": "Lundi",
-          "focus": "Groupe musculaire ciblé",
-          "exercises": [
-            {
-              "name": "Nom de l'exercice",
-              "sets": 4,
-              "reps": "8-10",
-              "rest": "90s",
-              "notes": "Conseil technique optionnel"
-            }
-          ]
+          "name": "Nom de l'exercice",
+          "sets": 4,
+          "reps": "8-10",
+          "rest": "90s",
+          "notes": "Conseil technique optionnel"
         }
       ]
     }
@@ -134,23 +153,99 @@ Génère un programme d'entraînement complet en JSON avec exactement cette stru
   "tips": ["Conseil 1", "Conseil 2", "Conseil 3"]
 }
 
-Paramètres du programme :
+Parametres du programme :
 - Objectif : {$goal}
 - Niveau : {$level}
-- Fréquence : {$sessionsLabel}
-- Durée du programme : {$p['programDuration']} semaines
-- Durée d'une séance : {$p['sessionDuration']} minutes
-- Équipement disponible : {$equipment}
+- Frequence : {$sessionsLabel}
+- Horizon du programme : {$programHorizon}
+- Duree d'une seance : {$params['sessionDuration']} minutes
+- Equipement disponible : {$equipment}
 
-Règles importantes :
-- Génère TOUTES les {$p['programDuration']} semaines avec progression (semaines différentes)
+Split recommande pour cette frequence :
+{$splitSuggestion}
+
+Repartition des jours d'entrainement recommandee :
+{$restPattern}
+
+Regles importantes :
 {$sessionsRule}
-- Chaque séance doit tenir en {$p['sessionDuration']} minutes
-- Adapte les exercices à l'équipement disponible
-- Programme progressif : augmente la charge/volume semaine après semaine
-- 4 à 6 exercices par séance maximum
-- Inclus 3 à 5 tips pratiques
-- Réponds UNIQUEMENT avec le JSON, rien d'autre
+- Le split hebdomadaire DOIT couvrir l'ensemble des groupes musculaires majeurs sur la semaine (pectoraux, dos, epaules, bras, jambes, fessiers, abdos), de maniere equilibree et coherente
+- Chaque groupe musculaire doit etre entraine au moins une fois par semaine, sans surcharger ni oublier un groupe
+- Place les seances sur des jours precis de la semaine en respectant la recuperation : pas deux seances intenses sur le meme groupe musculaire deux jours d'affilee
+- dayOfWeek est OBLIGATOIRE pour chaque seance, en minuscules parmi : "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"
+- Tous les dayOfWeek doivent etre distincts (pas deux seances le meme jour)
+- Ne liste QUE les jours d'entrainement dans sessions, les jours de repos sont simplement les jours absents
+- day (pour l'affichage) reprend le jour de la semaine + le focus, par exemple "Lundi - Push", "Mercredi - Pull", "Vendredi - Legs"
+- focus doit lister les groupes musculaires travailles (ex : "Pectoraux, epaules, triceps")
+- La seance du premier jour de la semaine (le lundi si present, sinon le plus tot) doit avoir "recommended": true, les autres "recommended": false
+- selectionGuidance doit resumer la repartition hebdomadaire (ex : "Lundi Push, Mardi Pull, Jeudi Legs, Samedi Full-body")
+- changeGuidance doit indiquer qu'on garde cette base {$programHorizon} et qu'on la change seulement si stagnation durable, douleur, changement d'objectif ou de materiel
+- Ne genere aucune semaine et n'utilise pas la cle weeks
+- Le programme doit etre stable et repetable sur plusieurs mois, pas different chaque semaine
+- Chaque seance doit tenir en {$params['sessionDuration']} minutes
+- Adapte les exercices a l'equipement disponible
+- Pour l'objectif calisthenie, favorise le controle du corps, la force relative, les exercices au poids du corps et les progressions techniques pertinentes
+{$volumeRule}
+- Pour chaque seance : 1 a 2 exercices poly-articulaires lourds en debut de seance, puis exercices d'isolation complementaires, et si pertinent un finisher ou du core
+- Series par exercice : 3 a 5 series de travail (hors echauffement)
+- Temps de repos coherent avec la charge : 2 a 3 minutes pour les gros poly-articulaires lourds, 60 a 90 secondes pour l'isolation
+- Inclus 3 a 5 tips pratiques
+- Reponds uniquement avec le JSON, rien d'autre
 PROMPT;
+    }
+
+    private function volumeRule(int $sessionDuration, string $level): string
+    {
+        // 1 exercice ~ 10-12 min (series + repos + transitions) apres l'echauffement
+        [$min, $max] = match ($sessionDuration) {
+            45 => [4, 5],
+            60 => [5, 6],
+            90 => [7, 8],
+            default => [5, 6],
+        };
+
+        if ($level === 'beginner') {
+            $min = max(4, $min - 1);
+        }
+
+        return "- OBLIGATOIRE : chaque seance contient entre {$min} et {$max} exercices (ni moins, ni plus). Pour une seance de {$sessionDuration} minutes, moins de {$min} exercices est considere comme une seance bacclee et est INTERDIT";
+    }
+
+    private function restPattern(int $sessionsPerWeek): string
+    {
+        return match ($sessionsPerWeek) {
+            1 => "- 1 seance : samedi (ou lundi), 6 jours de repos",
+            2 => "- 2 seances : lundi + jeudi (2 a 3 jours entre chaque seance)",
+            3 => "- 3 seances : lundi, mercredi, vendredi (1 jour de repos entre chaque)",
+            4 => "- 4 seances : lundi, mardi, jeudi, vendredi (repos mercredi, samedi, dimanche)",
+            5 => "- 5 seances : lundi, mardi, mercredi, vendredi, samedi (repos jeudi et dimanche)",
+            6 => "- 6 seances : lundi a samedi, repos le dimanche (ou repos un jour en milieu de semaine selon le split)",
+            default => "- Repartis les seances avec au moins 1 jour de repos entre deux seances sollicitant les memes groupes musculaires",
+        };
+    }
+
+    private function splitSuggestion(int $sessionsPerWeek, string $goal): string
+    {
+        if ($goal === 'calisthenics') {
+            return match ($sessionsPerWeek) {
+                1 => "- 1 seance : full-body calisthenie (tirer, pousser, jambes, gainage)",
+                2 => "- 2 seances : Upper (tractions, dips, pompes) / Lower + core (squats, fentes, L-sit)",
+                3 => "- 3 seances : Push (pompes, dips, handstand) / Pull (tractions, rows) / Legs + core",
+                4 => "- 4 seances : Push / Pull / Legs / Skill + core (ou Upper/Lower x2)",
+                5 => "- 5 seances : Push / Pull / Legs / Upper / Lower",
+                6 => "- 6 seances : Push / Pull / Legs / Push / Pull / Legs",
+                default => "- Choisis un split equilibre (ex : Push / Pull / Legs) couvrant tout le corps",
+            };
+        }
+
+        return match ($sessionsPerWeek) {
+            1 => "- 1 seance : full-body complete (pecs, dos, jambes, epaules, bras, core)",
+            2 => "- 2 seances : Upper (pecs, dos, epaules, bras) / Lower (quadris, ischios, fessiers, mollets, abdos)",
+            3 => "- 3 seances : Push (pecs, epaules, triceps) / Pull (dos, biceps) / Legs (jambes + abdos) - ou 3 full-body pour debutants",
+            4 => "- 4 seances : Upper / Lower / Upper / Lower (variante : horizontal/vertical)",
+            5 => "- 5 seances : Push / Pull / Legs / Upper / Lower (ou PPL + 2 full-body)",
+            6 => "- 6 seances : Push / Pull / Legs / Push / Pull / Legs (PPL x2)",
+            default => "- Choisis un split equilibre (PPL, Upper/Lower, full-body) couvrant l'ensemble du corps sur la semaine",
+        };
     }
 }

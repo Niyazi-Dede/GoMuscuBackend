@@ -24,8 +24,11 @@ class WorkoutController extends AbstractController
         $user = $this->getUser();
 
         return $this->json([
-            'thisWeek'  => $repository->countByUserThisWeek($user),
-            'thisMonth' => $repository->countByUserThisMonth($user),
+            'totalWorkouts'     => $repository->countByUser($user),
+            'workoutsThisWeek'  => $repository->countByUserThisWeek($user),
+            'workoutsThisMonth' => $repository->countByUserThisMonth($user),
+            'currentStreak'     => $repository->currentStreakByUser($user),
+            'favoriteExercises' => [],
         ]);
     }
 

@@ -69,4 +69,62 @@ class WorkoutRepository extends ServiceEntityRepository
             ->getQuery()
             ->getSingleScalarResult();
     }
+
+    public function countByUser(User $user): int
+    {
+        return (int) $this->createQueryBuilder('w')
+            ->select('COUNT(w.id)')
+            ->andWhere('w.user = :user')
+            ->andWhere('w.completed = true')
+            ->setParameter('user', $user)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    public function currentStreakByUser(User $user): int
+    {
+        $dates = $this->createQueryBuilder('w')
+            ->select('DISTINCT w.date')
+            ->andWhere('w.user = :user')
+            ->andWhere('w.completed = true')
+            ->setParameter('user', $user)
+            ->orderBy('w.date', 'DESC')
+            ->getQuery()
+            ->getSingleColumnResult();
+
+        if (empty($dates)) {
+            return 0;
+        }
+
+        $today = new \DateTimeImmutable('today');
+        $yesterday = $today->modify('-1 day');
+        $cursor = null;
+        $streak = 0;
+
+        foreach ($dates as $raw) {
+            $date = $raw instanceof \DateTimeInterface
+                ? \DateTimeImmutable::createFromInterface($raw)->setTime(0, 0)
+                : new \DateTimeImmutable((string) $raw);
+            $date = $date->setTime(0, 0);
+
+            if ($cursor === null) {
+                if ($date != $today && $date != $yesterday) {
+                    return 0;
+                }
+                $cursor = $date;
+                $streak = 1;
+                continue;
+            }
+
+            $expected = $cursor->modify('-1 day');
+            if ($date == $expected) {
+                $cursor = $date;
+                $streak++;
+            } elseif ($date < $expected) {
+                break;
+            }
+        }
+
+        return $streak;
+    }
 }
